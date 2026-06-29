@@ -29,10 +29,7 @@ class Threads:
             )
 
             page = await browser.new_page(
-                viewport={
-                    "width": 1280,
-                    "height": 1800
-                },
+                viewport={"width": 1280, "height": 1800},
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -48,45 +45,96 @@ class Threads:
 
             await page.wait_for_timeout(10000)
 
-            texts = []
+            text = None
 
             article_count = await page.locator("article").count()
             print(f"article 數量：{article_count}")
 
             if article_count > 0:
-                article_texts = await page.locator("article").all_inner_texts()
-                texts.extend(article_texts)
+                # 只抓第一篇 article，也就是最新一篇
+                text = await page.locator("article").nth(0).inner_text()
+            else:
+                print("article 抓不到，改用 body fallback")
 
-            if not texts:
-                print("article 抓不到，改抓 body 文字")
                 body_text = await page.locator("body").inner_text()
-                texts.append(body_text)
+                text = Threads._extract_first_post_from_body(body_text)
 
             await browser.close()
 
-        if not texts:
-            print("Threads 沒有抓到任何文字")
+        if not text:
+            print("沒有抓到最新貼文文字")
             return None
 
-        latest_text = Threads._clean_text(texts[0])
+        clean_text = Threads._clean_text(text)
 
-        if not latest_text:
-            print("最新貼文內容為空")
+        if not clean_text:
+            print("最新貼文清理後為空")
             return None
 
-        post_id = Threads._make_post_id(latest_text)
+        post_id = Threads._make_post_id(clean_text)
 
         print("=" * 50)
-        print("最新 Threads 貼文內容：")
-        print(latest_text[:1000])
+        print("最新 Threads 貼文：")
+        print(clean_text[:1000])
         print("=" * 50)
         print(f"最新貼文 ID：{post_id}")
 
         return ThreadPost(
             id=post_id,
             url=THREADS_URL,
-            text=latest_text
+            text=clean_text
         )
+
+    @staticmethod
+    def _extract_first_post_from_body(text: str) -> str:
+        lines = []
+
+        for line in text.splitlines():
+            line = line.strip()
+
+            if not line:
+                continue
+
+            lines.append(line)
+
+        if not lines:
+            return ""
+
+        result = []
+
+        started = False
+
+        for line in lines:
+            # 找到作者帳號後，開始收最新一篇
+            if line.lower() == "tery0920":
+                if started:
+                    break
+
+                started = True
+                result.append(line)
+                continue
+
+            if started:
+                # 遇到第二篇或其他推薦內容就停止
+                if line.lower() in {
+                    "reply",
+                    "repost",
+                    "share",
+                    "like",
+                    "回覆",
+                    "轉發",
+                    "分享",
+                    "讚",
+                }:
+                    continue
+
+                result.append(line)
+
+                # 粗略限制，避免整頁都被收進來
+                if len(result) >= 12:
+                    break
+
+        return "\n".join(result)
 
     @staticmethod
     def _clean_text(text: str) -> str:
