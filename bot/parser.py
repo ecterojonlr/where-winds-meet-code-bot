@@ -16,6 +16,7 @@ class Parser:
             return []
 
         text = text.upper()
+
         codes = Parser.CODE_PATTERN.findall(text)
 
         result = []
