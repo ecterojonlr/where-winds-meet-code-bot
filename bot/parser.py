@@ -3,7 +3,7 @@ import re
 
 class Parser:
     CODE_PATTERN = re.compile(
-        r"\b(?=[A-Z0-9]{5,20}\b)(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5,20}\b"
+        r"\b(?=[A-Z0-9]{5,20}\b)(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{5,20}\b"
     )
 
     @staticmethod
