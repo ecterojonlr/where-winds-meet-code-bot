@@ -4,7 +4,6 @@ from playwright.async_api import async_playwright
 
 
 THREADS_URL = "https://www.threads.com/@tery0920"
-MAX_POSTS = 20
 
 
 @dataclass
@@ -17,9 +16,7 @@ class ThreadPost:
 class Threads:
 
     @staticmethod
-    async def fetch() -> list[ThreadPost]:
-
-        posts: list[ThreadPost] = []
+    async def fetch_latest() -> ThreadPost | None:
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -51,10 +48,6 @@ class Threads:
 
             await page.wait_for_timeout(10000)
 
-            for _ in range(5):
-                await page.mouse.wheel(0, 2500)
-                await page.wait_for_timeout(2000)
-
             texts = []
 
             article_count = await page.locator("article").count()
@@ -71,37 +64,29 @@ class Threads:
 
             await browser.close()
 
-        seen = set()
+        if not texts:
+            print("Threads 沒有抓到任何文字")
+            return None
 
-        for index, text in enumerate(texts):
-            clean_text = Threads._clean_text(text)
+        latest_text = Threads._clean_text(texts[0])
 
-            if not clean_text:
-                continue
+        if not latest_text:
+            print("最新貼文內容為空")
+            return None
 
-            if clean_text in seen:
-                continue
+        post_id = Threads._make_post_id(latest_text)
 
-            seen.add(clean_text)
+        print("=" * 50)
+        print("最新 Threads 貼文內容：")
+        print(latest_text[:1000])
+        print("=" * 50)
+        print(f"最新貼文 ID：{post_id}")
 
-            print("=" * 50)
-            print(f"Threads 文字區塊 {index + 1}")
-            print(clean_text[:1500])
-
-            posts.append(
-                ThreadPost(
-                    id=f"threads-post-{index}",
-                    url=THREADS_URL,
-                    text=clean_text
-                )
-            )
-
-            if len(posts) >= MAX_POSTS:
-                break
-
-        print(f"Threads 最後回傳 {len(posts)} 篇文字")
-
-        return posts
+        return ThreadPost(
+            id=post_id,
+            url=THREADS_URL,
+            text=latest_text
+        )
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -134,3 +119,24 @@ class Threads:
             lines.append(line)
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _make_post_id(text: str) -> str:
+        lines = text.splitlines()
+
+        useful_lines = []
+
+        for line in lines:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.lower() == "tery0920":
+                continue
+
+            useful_lines.append(line)
+
+        base = "|".join(useful_lines[:5])
+
+        return str(abs(hash(base)))
