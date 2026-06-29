@@ -14,7 +14,8 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 async def main():
 
-    posts = Threads.fetch()
+    # 改成 await
+    posts = await Threads.fetch()
 
     new_codes = []
 
@@ -30,7 +31,6 @@ async def main():
     if not new_codes:
 
         print("沒有新的兌換碼")
-
         return
 
     Storage.add_codes(new_codes)
@@ -47,5 +47,4 @@ async def main():
 
 
 if __name__ == "__main__":
-
     asyncio.run(main())
