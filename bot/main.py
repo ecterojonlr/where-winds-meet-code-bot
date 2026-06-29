@@ -13,36 +13,37 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 
 async def main():
-
-    # 改成 await
     posts = await Threads.fetch()
 
+    if not posts:
+        print("沒有抓到 Threads 貼文")
+        return
+
+    known_codes = set(Storage.load_codes())
     new_codes = []
 
     for post in posts:
-
-        codes = Parser.extract_codes(post)
+        codes = Parser.extract_codes(post.text)
 
         for code in codes:
-
-            if Storage.is_new(code):
+            if code not in known_codes:
+                known_codes.add(code)
                 new_codes.append(code)
 
     if not new_codes:
-
         print("沒有新的兌換碼")
         return
 
-    Storage.add_codes(new_codes)
+    Storage.save_codes(list(known_codes))
 
     bot = DiscordBot(
-        TOKEN,
-        CHANNEL_ID
+        token=TOKEN,
+        channel_id=CHANNEL_ID
     )
 
     await bot.send_codes(
-        new_codes,
-        datetime.now().strftime("%Y/%m/%d")
+        codes=new_codes,
+        date=datetime.now().strftime("%Y/%m/%d")
     )
 
 
