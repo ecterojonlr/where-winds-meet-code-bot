@@ -15,13 +15,13 @@ class DiscordBot:
             channel = self.client.get_channel(self.channel_id)
 
             if channel is None:
-                print("Channel not found.")
+                print("找不到 Discord 頻道")
                 await self.client.close()
                 return
 
             message = (
-                "🎁 **發現新的燕雲十六聲國際服兌換碼！**\n\n"
-                + "\n".join(codes)
+                "🎁 **發現新的燕雲十六聲兌換碼！**\n\n"
+                + "\n".join(f"`{code}`" for code in codes)
                 + f"\n\n📅 {date}"
             )
 
