@@ -14,7 +14,12 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 async def main():
     posts = await Threads.fetch()
+    print(f"抓到 {len(posts)} 篇文章")
 
+for post in posts:
+    print("=" * 40)
+    print(post.text[:300])
+    
     if not posts:
         print("沒有抓到 Threads 貼文")
         return
