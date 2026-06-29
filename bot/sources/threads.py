@@ -22,25 +22,24 @@ class Threads:
         posts: list[ThreadPost] = []
 
         async with async_playwright() as p:
-
             browser = await p.chromium.launch(
                 headless=True,
                 args=[
-                    "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
-                    "--disable-dev-shm-usage"
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
                 ]
             )
 
             page = await browser.new_page(
                 viewport={
                     "width": 1280,
-                    "height": 1600
+                    "height": 1800
                 },
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
+                    "Chrome/126.0.0.0 Safari/537.36"
                 )
             )
 
@@ -50,97 +49,88 @@ class Threads:
                 timeout=60000
             )
 
-            await page.wait_for_timeout(8000)
+            await page.wait_for_timeout(10000)
 
-            # 往下滑幾次，讓 Threads 載入更多貼文
-            for _ in range(3):
+            for _ in range(5):
                 await page.mouse.wheel(0, 2500)
                 await page.wait_for_timeout(2000)
 
-            # 直接從畫面抓文字，不再依賴 BeautifulSoup / article
-            raw_blocks = await page.locator("div[role='button']").all_inner_texts()
+            texts = []
 
-            seen_ids = set()
+            article_count = await page.locator("article").count()
+            print(f"article 數量：{article_count}")
 
-            for index, block in enumerate(raw_blocks):
+            if article_count > 0:
+                article_texts = await page.locator("article").all_inner_texts()
+                texts.extend(article_texts)
 
-                text = Threads._clean_text(block)
-
-                if not Threads._looks_like_post(text):
-                    continue
-
-                post_id = f"threads-post-{index}"
-
-                if post_id in seen_ids:
-                    continue
-
-                seen_ids.add(post_id)
-
-                posts.append(
-                    ThreadPost(
-                        id=post_id,
-                        url=THREADS_URL,
-                        text=text
-                    )
-                )
-
-                if len(posts) >= MAX_POSTS:
-                    break
+            if not texts:
+                print("article 抓不到，改抓 body 文字")
+                body_text = await page.locator("body").inner_text()
+                texts.append(body_text)
 
             await browser.close()
 
-        print(f"Threads 抓到 {len(posts)} 篇可能貼文")
+        seen = set()
+
+        for index, text in enumerate(texts):
+            clean_text = Threads._clean_text(text)
+
+            if not clean_text:
+                continue
+
+            if clean_text in seen:
+                continue
+
+            seen.add(clean_text)
+
+            print("=" * 50)
+            print(f"Threads 文字區塊 {index + 1}")
+            print(clean_text[:1500])
+
+            posts.append(
+                ThreadPost(
+                    id=f"threads-post-{index}",
+                    url=THREADS_URL,
+                    text=clean_text
+                )
+            )
+
+            if len(posts) >= MAX_POSTS:
+                break
+
+        print(f"Threads 最後回傳 {len(posts)} 篇文字")
 
         return posts
 
     @staticmethod
     def _clean_text(text: str) -> str:
-
         lines = []
 
-        for line in text.splitlines():
+        ignore_lines = {
+            "Like",
+            "Reply",
+            "Repost",
+            "Share",
+            "讚",
+            "回覆",
+            "轉發",
+            "分享",
+            "Log in",
+            "Sign up",
+            "登入",
+            "註冊",
+        }
 
+        for line in text.splitlines():
             line = line.strip()
 
             if not line:
                 continue
 
-            if line in {
-                "Like",
-                "Reply",
-                "Repost",
-                "Share",
-                "讚",
-                "回覆",
-                "轉發",
-                "分享"
-            }:
+            if line in ignore_lines:
                 continue
 
             lines.append(line)
 
         return "\n".join(lines)
-
-    @staticmethod
-    def _looks_like_post(text: str) -> bool:
-
-        if not text:
-            return False
-
-        if len(text) < 10:
-            return False
-
-        blocked_keywords = [
-            "Log in",
-            "Sign up",
-            "登入",
-            "註冊",
-            "Threads",
-            "Instagram"
-        ]
-
-        for keyword in blocked_keywords:
-            if text.strip() == keyword:
-                return False
-
-        return True
