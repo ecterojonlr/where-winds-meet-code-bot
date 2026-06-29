@@ -31,7 +31,7 @@ jobs:
       - name: Run Bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          CHANNEL_IDS: ${{ secrets.CHANNEL_IDS }}
         run: |
           python -m bot.main
 
