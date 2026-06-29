@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 CODES_FILE = Path("data/codes.json")
-LATEST_POST_FILE = Path("data/latest_post.json")
+CHANNELS_FILE = Path("data/channels.json")
 
 
 class Storage:
@@ -43,31 +43,50 @@ class Storage:
             )
 
     @staticmethod
-    def load_latest_post_id() -> str | None:
-        if not LATEST_POST_FILE.exists():
-            return None
+    def load_channels() -> list[int]:
+        if not CHANNELS_FILE.exists():
+            print("找不到 data/channels.json")
+            return []
 
         try:
-            with open(LATEST_POST_FILE, "r", encoding="utf-8") as file:
+            with open(CHANNELS_FILE, "r", encoding="utf-8") as file:
                 data = json.load(file)
 
-            return data.get("id")
+            if not isinstance(data, list):
+                print("channels.json 格式錯誤，必須是 list")
+                return []
 
-        except json.JSONDecodeError:
-            return None
+            channel_ids = []
+
+            for item in data:
+                if isinstance(item, int):
+                    channel_ids.append(item)
+
+                elif isinstance(item, str) and item.strip().isdigit():
+                    channel_ids.append(int(item.strip()))
+
+                elif isinstance(item, dict) and "channel_id" in item:
+                    channel_ids.append(int(item["channel_id"]))
+
+            return sorted(set(channel_ids))
+
+        except Exception as error:
+            print("讀取 channels.json 失敗")
+            print(error)
+            return []
 
     @staticmethod
-    def save_latest_post_id(post_id: str) -> None:
-        LATEST_POST_FILE.parent.mkdir(
+    def save_channels(channel_ids: list[int]) -> None:
+        CHANNELS_FILE.parent.mkdir(
             parents=True,
             exist_ok=True
         )
 
-        with open(LATEST_POST_FILE, "w", encoding="utf-8") as file:
+        clean_channels = sorted(set(channel_ids))
+
+        with open(CHANNELS_FILE, "w", encoding="utf-8") as file:
             json.dump(
-                {
-                    "id": post_id
-                },
+                clean_channels,
                 file,
                 indent=4,
                 ensure_ascii=False
