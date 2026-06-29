@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+import re
 
 from playwright.async_api import async_playwright
 
 
 THREADS_URL = "https://www.threads.com/@tery0920"
+AUTHOR = "tery0920"
 
 
 @dataclass
@@ -17,7 +19,6 @@ class Threads:
 
     @staticmethod
     async def fetch_latest() -> ThreadPost | None:
-
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -45,101 +46,96 @@ class Threads:
 
             await page.wait_for_timeout(10000)
 
-            text = None
+            candidates = []
 
             article_count = await page.locator("article").count()
             print(f"article 數量：{article_count}")
 
             if article_count > 0:
-                # 只抓第一篇 article，也就是最新一篇
-                text = await page.locator("article").nth(0).inner_text()
-            else:
-                print("article 抓不到，改用 body fallback")
+                article_texts = await page.locator("article").all_inner_texts()
+                candidates.extend(article_texts)
 
-                body_text = await page.locator("body").inner_text()
-                text = Threads._extract_first_post_from_body(body_text)
+            button_texts = await page.locator("div[role='button']").all_inner_texts()
+            candidates.extend(button_texts)
+
+            body_text = await page.locator("body").inner_text()
+            body_candidates = Threads._split_body_into_posts(body_text)
+            candidates.extend(body_candidates)
 
             await browser.close()
 
-        if not text:
-            print("沒有抓到最新貼文文字")
+        latest_text = Threads._pick_latest_post(candidates)
+
+        if not latest_text:
+            print("沒有找到可用的最新貼文")
             return None
 
-        clean_text = Threads._clean_text(text)
-
-        if not clean_text:
-            print("最新貼文清理後為空")
-            return None
-
-        post_id = Threads._make_post_id(clean_text)
+        post_id = Threads._make_post_id(latest_text)
 
         print("=" * 50)
         print("最新 Threads 貼文：")
-        print(clean_text[:1000])
+        print(latest_text[:1000])
         print("=" * 50)
         print(f"最新貼文 ID：{post_id}")
 
         return ThreadPost(
             id=post_id,
             url=THREADS_URL,
-            text=clean_text
+            text=latest_text
         )
 
     @staticmethod
-    def _extract_first_post_from_body(text: str) -> str:
-        lines = []
+    def _split_body_into_posts(text: str) -> list[str]:
+        lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+        ]
 
-        for line in text.splitlines():
-            line = line.strip()
-
-            if not line:
-                continue
-
-            lines.append(line)
-
-        if not lines:
-            return ""
-
-        result = []
-
+        posts = []
+        current = []
         started = False
 
         for line in lines:
-            # 找到作者帳號後，開始收最新一篇
-            if line.lower() == "tery0920":
-                if started:
-                    break
+            if line.lower() == AUTHOR:
+                if started and current:
+                    posts.append("\n".join(current))
+                    current = []
 
                 started = True
-                result.append(line)
+                current.append(line)
                 continue
 
             if started:
-                # 遇到第二篇或其他推薦內容就停止
-                if line.lower() in {
-                    "reply",
-                    "repost",
-                    "share",
-                    "like",
-                    "回覆",
-                    "轉發",
-                    "分享",
-                    "讚",
-                }:
-                    continue
+                current.append(line)
 
-                result.append(line)
+        if current:
+            posts.append("\n".join(current))
 
-                # 粗略限制，避免整頁都被收進來
-                if len(result) >= 12:
-                    break
+        return posts
 
-        return "\n".join(result)
+    @staticmethod
+    def _pick_latest_post(candidates: list[str]) -> str | None:
+        seen = set()
+
+        for raw_text in candidates:
+            text = Threads._clean_text(raw_text)
+
+            if not text:
+                continue
+
+            if text in seen:
+                continue
+
+            seen.add(text)
+
+            if Threads._looks_like_real_post(text):
+                return text
+
+        return None
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        lines = []
-
         ignore_lines = {
             "Like",
             "Reply",
@@ -153,7 +149,11 @@ class Threads:
             "Sign up",
             "登入",
             "註冊",
+            "Threads",
+            "Instagram",
         }
+
+        lines = []
 
         for line in text.splitlines():
             line = line.strip()
@@ -169,22 +169,65 @@ class Threads:
         return "\n".join(lines)
 
     @staticmethod
-    def _make_post_id(text: str) -> str:
+    def _looks_like_real_post(text: str) -> bool:
         lines = text.splitlines()
 
+        if len(lines) < 3:
+            return False
+
+        joined = "\n".join(lines).upper()
+
+        if AUTHOR.upper() not in joined:
+            return False
+
+        # 只要裡面有疑似兌換碼，就視為可用貼文
+        code_pattern = re.compile(
+            r"\b(?=[A-Z0-9]{5,20}\b)(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{5,20}\b"
+        )
+
+        codes = code_pattern.findall(joined)
+
+        codes = [
+            code for code in codes
+            if code != AUTHOR.upper()
+        ]
+
+        if codes:
+            return True
+
+        # 沒有碼，但有時間格式，也可能是最新貼文
+        time_keywords = [
+            "分鐘",
+            "小時",
+            "天",
+            "週",
+            "月",
+            "m",
+            "h",
+            "d",
+        ]
+
+        for keyword in time_keywords:
+            if keyword in text:
+                return True
+
+        return False
+
+    @staticmethod
+    def _make_post_id(text: str) -> str:
         useful_lines = []
 
-        for line in lines:
+        for line in text.splitlines():
             line = line.strip()
 
             if not line:
                 continue
 
-            if line.lower() == "tery0920":
+            if line.lower() == AUTHOR:
                 continue
 
             useful_lines.append(line)
 
-        base = "|".join(useful_lines[:5])
+        base = "|".join(useful_lines[:6])
 
         return str(abs(hash(base)))
