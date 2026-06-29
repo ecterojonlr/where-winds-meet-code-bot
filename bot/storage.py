@@ -32,7 +32,8 @@ class Storage:
             exist_ok=True
         )
 
-        clean_codes = sorted(set(codes))
+        # 保持發現順序，只移除重複
+        clean_codes = list(dict.fromkeys(codes))
 
         with open(CODES_FILE, "w", encoding="utf-8") as file:
             json.dump(
@@ -68,7 +69,7 @@ class Storage:
                 elif isinstance(item, dict) and "channel_id" in item:
                     channel_ids.append(int(item["channel_id"]))
 
-            return sorted(set(channel_ids))
+            return list(dict.fromkeys(channel_ids))
 
         except Exception as error:
             print("讀取 channels.json 失敗")
@@ -82,7 +83,7 @@ class Storage:
             exist_ok=True
         )
 
-        clean_channels = sorted(set(channel_ids))
+        clean_channels = list(dict.fromkeys(channel_ids))
 
         with open(CHANNELS_FILE, "w", encoding="utf-8") as file:
             json.dump(
