@@ -13,41 +13,28 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 
 async def main():
-    latest_post = await Threads.fetch_latest()
+    posts = await Threads.fetch()
 
-    if latest_post is None:
-        print("沒有抓到最新貼文")
-        return
-
-    last_post_id = Storage.load_latest_post_id()
-
-    print(f"上次記錄貼文 ID：{last_post_id}")
-    print(f"這次最新貼文 ID：{latest_post.id}")
-
-    if latest_post.id == last_post_id:
-        print("最新貼文沒有變，不檢查兌換碼")
-        return
-
-    codes = Parser.extract_codes(latest_post.text)
-
-    print("本篇抓到的兌換碼：", codes)
-
-    if not codes:
-        print("最新貼文沒有兌換碼")
-        Storage.save_latest_post_id(latest_post.id)
+    if not posts:
+        print("沒有抓到 Threads 貼文")
         return
 
     known_codes = set(Storage.load_codes())
     new_codes = []
 
-    for code in codes:
-        if code not in known_codes:
-            known_codes.add(code)
-            new_codes.append(code)
-        else:
-            print(f"已存在：{code}")
+    for index, post in enumerate(posts):
+        print("=" * 50)
+        print(f"檢查第 {index + 1} 篇貼文")
 
-    Storage.save_latest_post_id(latest_post.id)
+        codes = Parser.extract_codes(post.text)
+        print("本篇抓到的兌換碼：", codes)
+
+        for code in codes:
+            if code not in known_codes:
+                known_codes.add(code)
+                new_codes.append(code)
+            else:
+                print(f"已存在：{code}")
 
     if not new_codes:
         print("沒有新的兌換碼")
