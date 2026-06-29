@@ -14,21 +14,32 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 async def main():
     posts = await Threads.fetch()
-    
-    if not posts:
-        print("沒有抓到 Threads 貼文")
-        return
+
+    print(f"抓到 Threads 貼文數量：{len(posts)}")
 
     known_codes = set(Storage.load_codes())
+    print(f"目前已記錄兌換碼數量：{len(known_codes)}")
+
     new_codes = []
 
-    for post in posts:
+    for index, post in enumerate(posts):
+        print("=" * 50)
+        print(f"第 {index + 1} 篇貼文")
+        print(post.text[:1000])
+
         codes = Parser.extract_codes(post.text)
+
+        print("本篇抓到的兌換碼：", codes)
 
         for code in codes:
             if code not in known_codes:
+                print("新兌換碼：", code)
                 known_codes.add(code)
                 new_codes.append(code)
+            else:
+                print("已存在：", code)
+
+    print("最後準備發送的新兌換碼：", new_codes)
 
     if not new_codes:
         print("沒有新的兌換碼")
