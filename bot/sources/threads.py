@@ -1,7 +1,8 @@
-import feedparser
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
 
-RSS_URL = "https://www.threads.com/@tery0920"
+THREADS_URL = "https://www.threads.com/@tery0920"
 
 
 class Threads:
@@ -9,19 +10,43 @@ class Threads:
     @staticmethod
     def fetch() -> list[str]:
 
-        feed = feedparser.parse(RSS_URL)
-
         posts = []
 
-        for entry in feed.entries:
-            text = ""
+        with sync_playwright() as p:
 
-            if "title" in entry:
-                text += entry.title + "\n"
+            browser = p.chromium.launch(
+                headless=True
+            )
 
-            if "summary" in entry:
-                text += entry.summary
+            page = browser.new_page()
 
-            posts.append(text)
+            page.goto(
+                THREADS_URL,
+                wait_until="networkidle",
+                timeout=60000
+            )
+
+            page.wait_for_timeout(5000)
+
+            html = page.content()
+
+            browser.close()
+
+        soup = BeautifulSoup(
+            html,
+            "lxml"
+        )
+
+        article_list = soup.find_all("article")
+
+        for article in article_list:
+
+            text = article.get_text(
+                separator="\n",
+                strip=True
+            )
+
+            if text:
+                posts.append(text)
 
         return posts
