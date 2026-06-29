@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 
 THREADS_URL = "https://www.threads.com/@tery0920"
 AUTHOR = "tery0920"
+MAX_POSTS = 5
 
 
 @dataclass
@@ -18,7 +19,9 @@ class ThreadPost:
 class Threads:
 
     @staticmethod
-    async def fetch_latest() -> ThreadPost | None:
+    async def fetch() -> list[ThreadPost]:
+        posts: list[ThreadPost] = []
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -46,43 +49,63 @@ class Threads:
 
             await page.wait_for_timeout(10000)
 
-            candidates = []
+            for _ in range(3):
+                await page.mouse.wheel(0, 2500)
+                await page.wait_for_timeout(2000)
+
+            texts = []
 
             article_count = await page.locator("article").count()
             print(f"article 數量：{article_count}")
 
             if article_count > 0:
                 article_texts = await page.locator("article").all_inner_texts()
-                candidates.extend(article_texts)
+                texts.extend(article_texts)
 
-            button_texts = await page.locator("div[role='button']").all_inner_texts()
-            candidates.extend(button_texts)
-
-            body_text = await page.locator("body").inner_text()
-            body_candidates = Threads._split_body_into_posts(body_text)
-            candidates.extend(body_candidates)
+            if not texts:
+                print("article 抓不到，改抓 body 文字")
+                body_text = await page.locator("body").inner_text()
+                texts = Threads._split_body_into_posts(body_text)
 
             await browser.close()
 
-        latest_text = Threads._pick_latest_post(candidates)
+        seen = set()
 
-        if not latest_text:
-            print("沒有找到可用的最新貼文")
-            return None
+        for text in texts:
+            clean_text = Threads._clean_text(text)
 
-        post_id = Threads._make_post_id(latest_text)
+            if not clean_text:
+                continue
 
-        print("=" * 50)
-        print("最新 Threads 貼文：")
-        print(latest_text[:1000])
-        print("=" * 50)
-        print(f"最新貼文 ID：{post_id}")
+            if clean_text in seen:
+                continue
 
-        return ThreadPost(
-            id=post_id,
-            url=THREADS_URL,
-            text=latest_text
-        )
+            seen.add(clean_text)
+
+            if not Threads._looks_like_post(clean_text):
+                continue
+
+            post_id = Threads._make_post_id(clean_text)
+
+            posts.append(
+                ThreadPost(
+                    id=post_id,
+                    url=THREADS_URL,
+                    text=clean_text
+                )
+            )
+
+            if len(posts) >= MAX_POSTS:
+                break
+
+        print(f"Threads 最後回傳 {len(posts)} 篇貼文")
+
+        for index, post in enumerate(posts):
+            print("=" * 50)
+            print(f"第 {index + 1} 篇貼文")
+            print(post.text[:800])
+
+        return posts
 
     @staticmethod
     def _split_body_into_posts(text: str) -> list[str]:
@@ -113,26 +136,6 @@ class Threads:
             posts.append("\n".join(current))
 
         return posts
-
-    @staticmethod
-    def _pick_latest_post(candidates: list[str]) -> str | None:
-        seen = set()
-
-        for raw_text in candidates:
-            text = Threads._clean_text(raw_text)
-
-            if not text:
-                continue
-
-            if text in seen:
-                continue
-
-            seen.add(text)
-
-            if Threads._looks_like_real_post(text):
-                return text
-
-        return None
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -169,49 +172,14 @@ class Threads:
         return "\n".join(lines)
 
     @staticmethod
-    def _looks_like_real_post(text: str) -> bool:
-        lines = text.splitlines()
-
-        if len(lines) < 3:
+    def _looks_like_post(text: str) -> bool:
+        if AUTHOR.upper() not in text.upper():
             return False
 
-        joined = "\n".join(lines).upper()
-
-        if AUTHOR.upper() not in joined:
+        if len(text) < 20:
             return False
 
-        # 只要裡面有疑似兌換碼，就視為可用貼文
-        code_pattern = re.compile(
-            r"\b(?=[A-Z0-9]{5,20}\b)(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{5,20}\b"
-        )
-
-        codes = code_pattern.findall(joined)
-
-        codes = [
-            code for code in codes
-            if code != AUTHOR.upper()
-        ]
-
-        if codes:
-            return True
-
-        # 沒有碼，但有時間格式，也可能是最新貼文
-        time_keywords = [
-            "分鐘",
-            "小時",
-            "天",
-            "週",
-            "月",
-            "m",
-            "h",
-            "d",
-        ]
-
-        for keyword in time_keywords:
-            if keyword in text:
-                return True
-
-        return False
+        return True
 
     @staticmethod
     def _make_post_id(text: str) -> str:
