@@ -1,4 +1,4 @@
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
 
@@ -8,29 +8,30 @@ THREADS_URL = "https://www.threads.com/@tery0920"
 class Threads:
 
     @staticmethod
-    def fetch() -> list[str]:
+    async def fetch() -> list[str]:
 
         posts = []
 
-        with sync_playwright() as p:
+        async with async_playwright() as p:
 
-            browser = p.chromium.launch(
+            browser = await p.chromium.launch(
                 headless=True
             )
 
-            page = browser.new_page()
+            page = await browser.new_page()
 
-            page.goto(
+            await page.goto(
                 THREADS_URL,
                 wait_until="networkidle",
                 timeout=60000
             )
 
-            page.wait_for_timeout(5000)
+            # 等待 Threads 載入內容
+            await page.wait_for_timeout(5000)
 
-            html = page.content()
+            html = await page.content()
 
-            browser.close()
+            await browser.close()
 
         soup = BeautifulSoup(
             html,
