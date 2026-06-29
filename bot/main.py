@@ -1,21 +1,21 @@
-import asyncio
-import os
-from datetime import datetime
+from bot.parser import Parser
+from bot.storage import Storage
 
-from bot.discord_bot import DiscordBot
+text = """
+ABC123
+DEF456
+abc123
+Hello World
+WWMGO1115
+"""
 
-TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = int(os.environ["CHANNEL_ID"])
+codes = Parser.extract_codes(text)
 
+print(codes)
 
-async def main():
-    bot = DiscordBot(TOKEN, CHANNEL_ID)
+for code in codes:
+    print(code, Storage.is_new(code))
 
-    await bot.send_codes(
-        ["TEST123"],
-        datetime.now().strftime("%Y/%m/%d"),
-    )
+Storage.add_codes(codes)
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
+print(Storage.load_codes())
