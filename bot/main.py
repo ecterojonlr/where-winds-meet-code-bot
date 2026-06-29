@@ -11,14 +11,14 @@ from bot.sources.threads import Threads
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-CHANNEL_IDS = [
-    int(channel.strip())
-    for channel in os.environ["CHANNEL_IDS"].split(",")
-    if channel.strip()
-]
-
 
 async def main():
+    channel_ids = Storage.load_channels()
+
+    if not channel_ids:
+        print("沒有設定任何 Discord 頻道，請檢查 data/channels.json")
+        return
+
     posts = await Threads.fetch()
 
     if not posts:
@@ -55,7 +55,7 @@ async def main():
 
     bot = DiscordBot(
         token=TOKEN,
-        channel_ids=CHANNEL_IDS
+        channel_ids=channel_ids
     )
 
     await bot.send_codes(
