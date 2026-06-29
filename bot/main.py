@@ -25,7 +25,9 @@ async def main():
         print("沒有抓到 Threads 貼文")
         return
 
-    known_codes = set(Storage.load_codes())
+    saved_codes = Storage.load_codes()
+    known_codes = set(saved_codes)
+
     new_codes = []
 
     for index, post in enumerate(posts):
@@ -39,6 +41,7 @@ async def main():
         for code in codes:
             if code not in known_codes:
                 known_codes.add(code)
+                saved_codes.append(code)
                 new_codes.append(code)
             else:
                 print(f"已存在：{code}")
@@ -47,7 +50,7 @@ async def main():
         print("沒有新的兌換碼")
         return
 
-    Storage.save_codes(list(known_codes))
+    Storage.save_codes(saved_codes)
 
     taipei_time = datetime.now(
         ZoneInfo("Asia/Taipei")
