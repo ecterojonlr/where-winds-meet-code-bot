@@ -2,7 +2,7 @@ name: Where Winds Meet Code Bot
 
 on:
     schedule:
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7,22,37,40 * * * *"
 
 concurrency:
   group: where-winds-meet-code-bot
