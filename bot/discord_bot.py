@@ -28,7 +28,7 @@ class DiscordBot:
             message = (
                 "🎁 **發現新的燕雲十六聲兌換碼！**\n\n"
                 + "\n".join(
-                    f"• `{code}`"
+                    f" `{code}`"
                     for code in codes
                 )
                 + f"\n\n📅 {date}"
