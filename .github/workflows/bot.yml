@@ -1,6 +1,6 @@
 name: Where Winds Meet Code Bot
 
-on:
+"on":
   workflow_dispatch:
 
   schedule:
