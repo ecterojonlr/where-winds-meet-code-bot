@@ -4,23 +4,5 @@
         "channel_name": "YYY",
         "channel_id": "1521225956499394631",
         "note": "測試用"
-    },
-    {
-        "guild_name": "雜雜",
-        "channel_name": "test",
-        "channel_id": "1521079425939017828",
-        "note": "測試用"
-    },
-    {
-        "guild_name": "百業",
-        "channel_name": "兌換碼",
-        "channel_id": "1515626940122271814",
-        "note": ""
-    },
-    {
-        "guild_name": "雲瑛",
-        "channel_name": "123",
-        "channel_id": "1446046960124563457",
-        "note": ""
     }
 ]
