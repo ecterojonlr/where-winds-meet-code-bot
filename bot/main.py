@@ -7,6 +7,7 @@ from bot.discord_bot import DiscordBot
 from bot.parser import Parser
 from bot.storage import Storage
 from bot.sources.threads import Threads
+from bot.sources.bahamut import Bahamut
 
 
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -19,10 +20,13 @@ async def main():
         print("沒有設定任何 Discord 頻道，請檢查 data/channels.json")
         return
 
-    posts = await Threads.fetch()
+    threads_posts = await Threads.fetch()
+    bahamut_posts = await Bahamut.fetch()
+
+    posts = threads_posts + bahamut_posts
 
     if not posts:
-        print("沒有抓到 Threads 貼文")
+        print("沒有抓到任何來源內容")
         return
 
     saved_codes = Storage.load_codes()
@@ -32,7 +36,16 @@ async def main():
 
     for index, post in enumerate(posts):
         print("=" * 50)
-        print(f"檢查第 {index + 1} 篇貼文")
+        print(f"檢查第 {index + 1} 筆來源")
+
+        source_name = getattr(
+            post,
+            "source",
+            post.url
+        )
+
+        print(f"來源：{source_name}")
+        print(f"網址：{post.url}")
 
         codes = Parser.extract_codes(post.text)
 
