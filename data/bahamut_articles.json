@@ -3,14 +3,6 @@
         "name": "巴哈姆特序號文章",
         "url": "https://forum.gamer.com.tw/Co.php?bsn=75703&sn=1229",
         "enabled": true,
-        "start_keywords": [
-            "目前可用",
-            "可用序號",
-            "有效序號",
-            "尚可使用",
-            "可使用",
-            "未過期"
-        ],
         "stop_keywords": [
             "已失效",
             "已過期",
