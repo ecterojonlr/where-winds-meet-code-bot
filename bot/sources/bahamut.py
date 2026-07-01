@@ -78,14 +78,13 @@ class Bahamut:
                         print(f"巴哈姆特沒有抓到主文章內容：{name}")
                         continue
 
-                    valid_text = Bahamut._extract_valid_section(
+                    valid_text = Bahamut._extract_article_until_stop(
                         text=article_text,
-                        start_keywords=article.get("start_keywords", []),
                         stop_keywords=article.get("stop_keywords", [])
                     )
 
                     if not valid_text:
-                        print(f"巴哈姆特沒有找到可用序號區塊：{name}")
+                        print(f"巴哈姆特主文章沒有可解析內容：{name}")
                         continue
 
                     posts.append(
@@ -101,7 +100,7 @@ class Bahamut:
                     )
 
                     print("=" * 50)
-                    print(f"巴哈姆特可用序號區塊：{name}")
+                    print(f"巴哈姆特主文章解析區塊：{name}")
                     print(valid_text[:800])
 
                 except Exception as error:
@@ -167,9 +166,8 @@ class Bahamut:
         return ""
 
     @staticmethod
-    def _extract_valid_section(
+    def _extract_article_until_stop(
         text: str,
-        start_keywords: list[str],
         stop_keywords: list[str]
     ) -> str:
         lines = [
@@ -181,25 +179,10 @@ class Bahamut:
         if not lines:
             return ""
 
-        start_index = -1
-
-        for index, line in enumerate(lines):
-            if Bahamut._contains_any(
-                text=line,
-                keywords=start_keywords
-            ):
-                start_index = index
-                break
-
-        if start_index == -1:
-            return ""
-
         result_lines = []
 
-        for index in range(start_index, len(lines)):
-            line = lines[index]
-
-            if index > start_index and Bahamut._contains_any(
+        for line in lines:
+            if Bahamut._contains_any(
                 text=line,
                 keywords=stop_keywords
             ):
