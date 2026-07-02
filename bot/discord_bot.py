@@ -26,12 +26,12 @@ class DiscordBot:
         async def on_ready():
 
             message = (
-                "🎁 **發現新的燕雲十六聲兌換碼！**\n\n"
+                " **發現新的燕雲十六聲兌換碼！**\n\n"
                 + "\n".join(
                     f"```{code}```"
                     for code in codes
                 )
-                + f"\n\n📅 {date}"
+                + f"\n\n {date}"
             )
 
             success = 0
