@@ -22,10 +22,7 @@ class CodesYar:
     )
 
     BLOCKLIST = {
-        # codes.yar.gg 新增誤判
         "TIPJAR",
-
-        # codes.yar.gg 介面文字
         "TRACK",
         "CLICK",
         "MARKED",
@@ -39,7 +36,6 @@ class CodesYar:
         "BROWSER",
         "SUBMISSION",
 
-        # 語言 / 網站文字
         "ENGLISH",
         "ESPANOL",
         "FRANCAIS",
@@ -58,7 +54,6 @@ class CodesYar:
         "MALAYSIA",
         "PIRATE",
 
-        # 常見 UI 字串
         "SUBMIT",
         "CONTACT",
         "CANCEL",
@@ -89,7 +84,6 @@ class CodesYar:
         "RATE",
         "LIMITED",
 
-        # 遊戲名稱 / 網站名稱
         "WHERE",
         "WINDS",
         "MEET",
@@ -99,6 +93,8 @@ class CodesYar:
 
     @staticmethod
     async def fetch() -> list[CodesYarPost]:
+        codes: list[str] = []
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -121,10 +117,8 @@ class CodesYar:
                 )
             )
 
-            body_text = ""
-
             try:
-                print("開始抓取 codes.yar.gg 的 All 分頁")
+                print("開始抓取 codes.yar.gg 下方表格序號")
                 print(CODES_YAR_URL)
 
                 await page.goto(
@@ -135,11 +129,18 @@ class CodesYar:
 
                 await page.wait_for_timeout(5000)
 
+                # 點擊「全部 / All」分頁
                 await CodesYar._click_all_tab(page)
 
                 await page.wait_for_timeout(2000)
 
-                body_text = await CodesYar._safe_body_text(page)
+                # 往下捲，確保下方表格已經載入
+                for _ in range(5):
+                    await page.mouse.wheel(0, 1200)
+                    await page.wait_for_timeout(500)
+
+                # 只抓下方表格中的序號，不抓最上方單一展示序號
+                codes = await CodesYar._extract_table_codes(page)
 
             except Exception as error:
                 print("抓取 codes.yar.gg 失敗")
@@ -147,80 +148,126 @@ class CodesYar:
 
             await browser.close()
 
-        codes = CodesYar._extract_codes(body_text)
+        clean_codes = CodesYar._clean_codes(codes)
 
-        print("codes.yar.gg All 分頁抓到：", codes)
+        print("codes.yar.gg 表格抓到：", clean_codes)
 
-        if not codes:
+        if not clean_codes:
             return []
 
         return [
             CodesYarPost(
-                id="codes-yar-all",
+                id="codes-yar-table",
                 url=CODES_YAR_URL,
-                text="\n".join(codes),
+                text="\n".join(clean_codes),
                 source="codes.yar.gg"
             )
         ]
 
     @staticmethod
     async def _click_all_tab(page) -> None:
-        try:
-            await page.get_by_role(
-                "button",
-                name="All",
-                exact=True
-            ).click(timeout=3000)
-            return
-        except Exception:
-            pass
+        tab_names = [
+            "全部",
+            "All",
+        ]
 
-        try:
-            await page.get_by_role(
-                "tab",
-                name="All",
-                exact=True
-            ).click(timeout=3000)
-            return
-        except Exception:
-            pass
+        for tab_name in tab_names:
+            try:
+                await page.get_by_role(
+                    "button",
+                    name=tab_name,
+                    exact=True
+                ).click(timeout=3000)
 
-        try:
-            await page.get_by_text(
-                "All",
-                exact=True
-            ).click(timeout=3000)
-            return
-        except Exception:
-            print("codes.yar.gg 找不到 All 按鈕，使用目前頁面內容")
+                print(f"已切換分頁：{tab_name}")
+
+                return
+
+            except Exception:
+                pass
+
+            try:
+                await page.get_by_text(
+                    tab_name,
+                    exact=True
+                ).click(timeout=3000)
+
+                print(f"已切換分頁：{tab_name}")
+
+                return
+
+            except Exception:
+                pass
+
+        print("codes.yar.gg 找不到全部 / All 分頁，使用目前頁面")
 
     @staticmethod
-    async def _safe_body_text(page) -> str:
-        try:
-            return await page.locator("body").inner_text()
-        except Exception:
-            return ""
+    async def _extract_table_codes(page) -> list[str]:
+        """
+        只抓下方表格 / 清單裡的序號。
+        不抓最上方大型展示中的單一序號。
+        """
+
+        codes: list[str] = []
+
+        # 這段直接從 DOM 裡找像「下方表格序號欄位」的 input/button/div
+        raw_codes = await page.evaluate(
+            """
+            () => {
+                const results = [];
+
+                const elements = Array.from(
+                    document.querySelectorAll("input, button, div, span")
+                );
+
+                for (const el of elements) {
+                    const rect = el.getBoundingClientRect();
+
+                    // 排除最上方展示區
+                    // 只抓頁面中段以下的內容，也就是下方表格區
+                    if (rect.top < 430) {
+                        continue;
+                    }
+
+                    let text = "";
+
+                    if (el.tagName === "INPUT") {
+                        text = el.value || "";
+                    } else {
+                        text = el.innerText || el.textContent || "";
+                    }
+
+                    text = text.trim();
+
+                    if (!text) {
+                        continue;
+                    }
+
+                    results.push(text);
+                }
+
+                return results;
+            }
+            """
+        )
+
+        for item in raw_codes:
+            for line in str(item).splitlines():
+                code = CodesYar._clean_line(line)
+
+                if CodesYar._is_valid_code(code):
+                    codes.append(code)
+
+        return codes
 
     @staticmethod
-    def _extract_codes(text: str) -> list[str]:
-        if not text:
-            return []
-
+    def _clean_codes(codes: list[str]) -> list[str]:
         result = []
 
-        for line in text.splitlines():
-            code = CodesYar._clean_line(line)
+        for code in codes:
+            code = CodesYar._clean_line(code)
 
-            if not code:
-                continue
-
-            if code in CodesYar.BLOCKLIST:
-                continue
-
-            if CodesYar._is_bad_code(code):
-                continue
-
-            if not CodesYar.CODE_PATTERN.match(code):
+            if not CodesYar._is_valid_code(code):
                 continue
 
             if code not in result:
@@ -240,6 +287,22 @@ class CodesYar:
         return line
 
     @staticmethod
+    def _is_valid_code(code: str) -> bool:
+        if not code:
+            return False
+
+        if code in CodesYar.BLOCKLIST:
+            return False
+
+        if not CodesYar.CODE_PATTERN.match(code):
+            return False
+
+        if CodesYar._is_bad_code(code):
+            return False
+
+        return True
+
+    @staticmethod
     def _is_bad_code(code: str) -> bool:
         if len(code) < 5 or len(code) > 20:
             return True
@@ -248,15 +311,14 @@ class CodesYar:
         if re.fullmatch(r"\d{2}T\d{2}", code):
             return True
 
-        # 排除 codes.yar.gg 的數量提示，例如 79LEFT
+        # 排除數量提示，例如 79LEFT
         if re.fullmatch(r"\d+LEFT", code):
             return True
 
-        # 排除 codes.yar.gg 的頁面提示，例如 CODE1OF79
+        # 排除頁面提示，例如 CODE1OF79
         if re.fullmatch(r"CODE\d+OF\d+", code):
             return True
 
-        # 排除純數字 + 常見 UI 詞
         if re.fullmatch(r"\d+(LEFT|USED|EXPIRED|CODES|CODE)", code):
             return True
 
@@ -292,9 +354,6 @@ class CodesYar:
             "PREVIOUS",
             "NEXT",
             "LEFT",
-            "WHERE",
-            "WINDS",
-            "MEET",
             "COUPON",
             "REDEEM",
             "CODE",
