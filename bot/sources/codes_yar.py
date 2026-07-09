@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import re
-import requests
+import urllib.request
 
 
 CODES_YAR_URL = "https://codes.yar.gg/"
@@ -70,39 +70,33 @@ class CodesYar:
 
     @staticmethod
     def _fetch_html() -> str:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            "Accept": (
-                "text/html,application/xhtml+xml,application/xml;"
-                "q=0.9,image/avif,image/webp,*/*;q=0.8"
-            ),
-            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-        }
-
-        response = requests.get(
+        request = urllib.request.Request(
             CODES_YAR_URL,
-            headers=headers,
-            timeout=30
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/126.0.0.0 Safari/537.36"
+                ),
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;"
+                    "q=0.9,image/avif,image/webp,*/*;q=0.8"
+                ),
+                "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+            }
         )
 
-        response.raise_for_status()
-
-        return response.text
+        with urllib.request.urlopen(
+            request,
+            timeout=30
+        ) as response:
+            return response.read().decode(
+                "utf-8",
+                errors="replace"
+            )
 
     @staticmethod
     def _extract_code_entries_block(html: str) -> str:
-        """
-        從原始碼中找出：
-        const codeEntries = [...]
-        
-        使用括號配對，不用簡單 regex，
-        避免遇到陣列內有 ] 或換行時截斷錯誤。
-        """
-
         match = re.search(
             r"\bconst\s+codeEntries\s*=",
             html
@@ -166,11 +160,6 @@ class CodesYar:
     ) -> list[str]:
         result = []
 
-        # 優先抓 code 欄位
-        # 例如：
-        # { code: "MX8MYAYJ4Q" }
-        # { "code": "MX8MYAYJ4Q" }
-        # { 'code': 'MX8MYAYJ4Q' }
         matches = CodesYar.CODE_FIELD_PATTERN.findall(
             code_entries_block
         )
@@ -187,9 +176,6 @@ class CodesYar:
         if result:
             return result
 
-        # 備用方案：
-        # 如果 codeEntries 是純字串陣列，例如：
-        # const codeEntries = ["ABC123", "DEF456"]
         fallback_matches = CodesYar.STRING_PATTERN.findall(
             code_entries_block
         )
