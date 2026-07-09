@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import asyncio
 import re
 
 from playwright.async_api import async_playwright
@@ -19,10 +18,25 @@ class CodesYarPost:
 class CodesYar:
 
     CODE_PATTERN = re.compile(
-        r"\b[A-Z0-9]{5,20}\b"
+        r"^[A-Z0-9]{5,20}$"
     )
 
     BLOCKLIST = {
+        # codes.yar.gg 介面文字
+        "TRACK",
+        "CLICK",
+        "MARKED",
+        "BELOW",
+        "PASTE",
+        "REPEAT",
+        "NEVER",
+        "ADDED",
+        "BUILD",
+        "TUTORIAL",
+        "BROWSER",
+        "SUBMISSION",
+
+        # 語言 / 網站文字
         "ENGLISH",
         "ESPANOL",
         "FRANCAIS",
@@ -41,6 +55,7 @@ class CodesYar:
         "MALAYSIA",
         "PIRATE",
 
+        # 常見 UI 字串
         "SUBMIT",
         "CONTACT",
         "CANCEL",
@@ -71,6 +86,7 @@ class CodesYar:
         "RATE",
         "LIMITED",
 
+        # 遊戲名稱 / 網站名稱
         "WHERE",
         "WINDS",
         "MEET",
@@ -80,9 +96,6 @@ class CodesYar:
 
     @staticmethod
     async def fetch() -> list[CodesYarPost]:
-        collected_texts: list[str] = []
-        response_tasks = []
-
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -105,17 +118,7 @@ class CodesYar:
                 )
             )
 
-            page.on(
-                "response",
-                lambda response: response_tasks.append(
-                    asyncio.create_task(
-                        CodesYar._capture_response(
-                            response=response,
-                            collected_texts=collected_texts
-                        )
-                    )
-                )
-            )
+            body_text = ""
 
             try:
                 print("開始抓取 codes.yar.gg 的 All 分頁")
@@ -131,62 +134,14 @@ class CodesYar:
 
                 # 嘗試切換到 All 分頁
                 # 如果 All 本來就是預設頁，點不到也不影響
-                try:
-                    await page.get_by_role(
-                        "button",
-                        name="All",
-                        exact=True
-                    ).click(timeout=3000)
+                await CodesYar._click_all_tab(page)
 
-                    await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(2000)
 
-                except Exception:
-                    try:
-                        await page.get_by_text(
-                            "All",
-                            exact=True
-                        ).click(timeout=3000)
-
-                        await page.wait_for_timeout(2000)
-
-                    except Exception:
-                        print("codes.yar.gg 找不到 All 按鈕，使用目前頁面內容")
-
-                # 只抓目前 All 頁面內容
+                # 只抓目前畫面上的文字
+                # 不抓 response
+                # 不抓 localStorage / sessionStorage
                 body_text = await CodesYar._safe_body_text(page)
-
-                if body_text:
-                    collected_texts.append(body_text)
-
-                # 抓 localStorage / sessionStorage
-                storage_text = await page.evaluate(
-                    """
-                    () => {
-                        const data = [];
-
-                        for (let i = 0; i < localStorage.length; i++) {
-                            const key = localStorage.key(i);
-                            data.push(key + "=" + localStorage.getItem(key));
-                        }
-
-                        for (let i = 0; i < sessionStorage.length; i++) {
-                            const key = sessionStorage.key(i);
-                            data.push(key + "=" + sessionStorage.getItem(key));
-                        }
-
-                        return data.join("\\n");
-                    }
-                    """
-                )
-
-                if storage_text:
-                    collected_texts.append(storage_text)
-
-                if response_tasks:
-                    await asyncio.gather(
-                        *response_tasks,
-                        return_exceptions=True
-                    )
 
             except Exception as error:
                 print("抓取 codes.yar.gg 失敗")
@@ -194,13 +149,7 @@ class CodesYar:
 
             await browser.close()
 
-        all_text = "\n".join(
-            text
-            for text in collected_texts
-            if text
-        )
-
-        codes = CodesYar._extract_codes(all_text)
+        codes = CodesYar._extract_codes(body_text)
 
         print("codes.yar.gg All 分頁抓到：", codes)
 
@@ -217,31 +166,35 @@ class CodesYar:
         ]
 
     @staticmethod
-    async def _capture_response(
-        response,
-        collected_texts: list[str]
-    ) -> None:
+    async def _click_all_tab(page) -> None:
         try:
-            content_type = response.headers.get(
-                "content-type",
-                ""
-            ).lower()
-
-            url = response.url.lower()
-
-            if "application/json" not in content_type and "text/plain" not in content_type:
-                return
-
-            if "codes.yar.gg" not in url and "yar.gg" not in url:
-                return
-
-            text = await response.text()
-
-            if text:
-                collected_texts.append(text)
-
-        except Exception:
+            await page.get_by_role(
+                "button",
+                name="All",
+                exact=True
+            ).click(timeout=3000)
             return
+        except Exception:
+            pass
+
+        try:
+            await page.get_by_role(
+                "tab",
+                name="All",
+                exact=True
+            ).click(timeout=3000)
+            return
+        except Exception:
+            pass
+
+        try:
+            await page.get_by_text(
+                "All",
+                exact=True
+            ).click(timeout=3000)
+            return
+        except Exception:
+            print("codes.yar.gg 找不到 All 按鈕，使用目前頁面內容")
 
     @staticmethod
     async def _safe_body_text(page) -> str:
@@ -255,14 +208,10 @@ class CodesYar:
         if not text:
             return []
 
-        upper_text = text.upper()
-
-        candidates = CodesYar.CODE_PATTERN.findall(upper_text)
-
         result = []
 
-        for code in candidates:
-            code = code.strip().upper()
+        for line in text.splitlines():
+            code = CodesYar._clean_line(line)
 
             if not code:
                 continue
@@ -273,17 +222,50 @@ class CodesYar:
             if CodesYar._is_bad_code(code):
                 continue
 
+            if not CodesYar.CODE_PATTERN.match(code):
+                continue
+
             if code not in result:
                 result.append(code)
 
         return result
 
     @staticmethod
+    def _clean_line(line: str) -> str:
+        line = line.strip().upper()
+
+        # 移除常見包住序號的符號
+        line = line.strip("`'\"[](){}<>：:，,。.!！")
+
+        # 移除空白與連字號
+        line = line.replace(" ", "")
+        line = line.replace("-", "")
+
+        return line
+
+    @staticmethod
     def _is_bad_code(code: str) -> bool:
         if len(code) < 5 or len(code) > 20:
             return True
 
+        # 排除 ISO 時間片段，例如 09T02、09T09
+        if re.fullmatch(r"\d{2}T\d{2}", code):
+            return True
+
         bad_keywords = [
+            "TRACK",
+            "CLICK",
+            "MARK",
+            "BELOW",
+            "PASTE",
+            "REPEAT",
+            "NEVER",
+            "ADDED",
+            "BUILD",
+            "TUTORIAL",
+            "BROWSER",
+            "SUBMISSION",
+
             "SUBMIT",
             "CONTACT",
             "CANCEL",
@@ -295,6 +277,7 @@ class CodesYar:
             "USED",
             "EXPIRED",
             "COPY",
+            "COPIED",
             "PREVIOUS",
             "NEXT",
             "WHERE",
