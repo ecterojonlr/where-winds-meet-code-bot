@@ -8,6 +8,7 @@ from bot.parser import Parser
 from bot.storage import Storage
 from bot.sources.threads import Threads
 from bot.sources.bahamut import Bahamut
+from bot.sources.codes_yar import CodesYar
 
 
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -22,8 +23,9 @@ async def main():
 
     threads_posts = await Threads.fetch()
     bahamut_posts = await Bahamut.fetch()
+    codes_yar_posts = await CodesYar.fetch()
 
-    posts = threads_posts + bahamut_posts
+    posts = threads_posts + bahamut_posts + codes_yar_posts
 
     if not posts:
         print("沒有抓到任何來源內容")
