@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import re
-import urllib.request
+
+from playwright.async_api import async_playwright
 
 
 CODES_YAR_URL = "https://codes.yar.gg/"
@@ -20,168 +21,241 @@ class CodesYar:
         r"^[A-Z0-9]{5,20}$"
     )
 
-    CODE_FIELD_PATTERN = re.compile(
-        r"""(?:^|[,{]\s*)(?:"code"|'code'|code)\s*:\s*(["'])(.*?)\1""",
-        re.DOTALL
-    )
+    BLOCKLIST = {
+        "TIPJAR",
 
-    STRING_PATTERN = re.compile(
-        r"""(["'])([A-Za-z0-9]{5,20})\1"""
-    )
+        "TRACK",
+        "CLICK",
+        "MARKED",
+        "BELOW",
+        "PASTE",
+        "REPEAT",
+        "NEVER",
+        "ADDED",
+        "BUILD",
+        "TUTORIAL",
+        "BROWSER",
+        "SUBMISSION",
+
+        "ENGLISH",
+        "ESPANOL",
+        "FRANCAIS",
+        "DEUTSCH",
+        "ITALIANO",
+        "PORTUGUES",
+        "RUSSIAN",
+        "TURKCE",
+        "ARABIC",
+        "CHINESE",
+        "JAPANESE",
+        "KOREAN",
+        "THAI",
+        "VIETNAMESE",
+        "INDONESIA",
+        "MALAYSIA",
+        "PIRATE",
+
+        "SUBMIT",
+        "CONTACT",
+        "CANCEL",
+        "CONFIRM",
+        "REPORT",
+        "ARCHIVED",
+        "ACTIVE",
+        "UNUSED",
+        "USED",
+        "EXPIRED",
+        "CODES",
+        "CODE",
+        "COUPON",
+        "COPY",
+        "COPIED",
+        "PREVIOUS",
+        "NEXT",
+        "BACK",
+        "SKIP",
+        "LEFT",
+        "FILTER",
+        "REFERENCE",
+        "DEVICE",
+        "VALID",
+        "INVALID",
+        "REDEEM",
+        "REDEEMED",
+        "RATE",
+        "LIMITED",
+
+        "WHERE",
+        "WINDS",
+        "MEET",
+        "WWM",
+        "YARGG",
+    }
 
     @staticmethod
     async def fetch() -> list[CodesYarPost]:
-        print("開始抓取 codes.yar.gg 原始碼中的 codeEntries")
-        print(CODES_YAR_URL)
+        codes: list[str] = []
 
-        try:
-            html = CodesYar._fetch_html()
-
-            code_entries_block = CodesYar._extract_code_entries_block(
-                html=html
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ]
             )
 
-            if not code_entries_block:
-                print("找不到 const codeEntries")
-                return []
-
-            codes = CodesYar._extract_codes_from_code_entries(
-                code_entries_block
-            )
-
-            print("codes.yar.gg codeEntries 抓到：", codes)
-
-            if not codes:
-                return []
-
-            return [
-                CodesYarPost(
-                    id="codes-yar-code-entries",
-                    url=CODES_YAR_URL,
-                    text="\n".join(codes),
-                    source="codes.yar.gg"
-                )
-            ]
-
-        except Exception as error:
-            print("抓取 codes.yar.gg 失敗")
-            print(error)
-            return []
-
-    @staticmethod
-    def _fetch_html() -> str:
-        request = urllib.request.Request(
-            CODES_YAR_URL,
-            headers={
-                "User-Agent": (
+            page = await browser.new_page(
+                viewport={
+                    "width": 1280,
+                    "height": 1800
+                },
+                user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/126.0.0.0 Safari/537.36"
-                ),
-                "Accept": (
-                    "text/html,application/xhtml+xml,application/xml;"
-                    "q=0.9,image/avif,image/webp,*/*;q=0.8"
-                ),
-                "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-            }
-        )
-
-        with urllib.request.urlopen(
-            request,
-            timeout=30
-        ) as response:
-            return response.read().decode(
-                "utf-8",
-                errors="replace"
+                )
             )
 
-    @staticmethod
-    def _extract_code_entries_block(html: str) -> str:
-        match = re.search(
-            r"\bconst\s+codeEntries\s*=",
-            html
-        )
+            try:
+                print("開始抓取 codes.yar.gg 頁面表格序號")
+                print(CODES_YAR_URL)
 
-        if not match:
-            return ""
+                await page.goto(
+                    CODES_YAR_URL,
+                    wait_until="domcontentloaded",
+                    timeout=60000
+                )
 
-        start_search_index = match.end()
+                await page.wait_for_timeout(5000)
 
-        array_start = html.find(
-            "[",
-            start_search_index
-        )
+                await CodesYar._click_all_tab(page)
 
-        if array_start == -1:
-            return ""
+                await page.wait_for_timeout(2000)
 
-        depth = 0
-        in_string = False
-        string_quote = ""
-        escape = False
+                for _ in range(5):
+                    await page.mouse.wheel(0, 1200)
+                    await page.wait_for_timeout(500)
 
-        for index in range(array_start, len(html)):
-            char = html[index]
+                codes = await CodesYar._extract_table_codes(page)
 
-            if in_string:
-                if escape:
-                    escape = False
-                    continue
+            except Exception as error:
+                print("抓取 codes.yar.gg 失敗")
+                print(error)
 
-                if char == "\\":
-                    escape = True
-                    continue
+            await browser.close()
 
-                if char == string_quote:
-                    in_string = False
-                    string_quote = ""
+        clean_codes = CodesYar._clean_codes(codes)
 
-                continue
+        print("codes.yar.gg 表格抓到：", clean_codes)
 
-            if char in ["'", '"', "`"]:
-                in_string = True
-                string_quote = char
-                continue
+        if not clean_codes:
+            return []
 
-            if char == "[":
-                depth += 1
-
-            elif char == "]":
-                depth -= 1
-
-                if depth == 0:
-                    return html[array_start:index + 1]
-
-        return ""
+        return [
+            CodesYarPost(
+                id="codes-yar-table",
+                url=CODES_YAR_URL,
+                text="\n".join(clean_codes),
+                source="codes.yar.gg"
+            )
+        ]
 
     @staticmethod
-    def _extract_codes_from_code_entries(
-        code_entries_block: str
-    ) -> list[str]:
+    async def _click_all_tab(page) -> None:
+        tab_names = [
+            "全部",
+            "All",
+        ]
+
+        for tab_name in tab_names:
+            try:
+                await page.get_by_role(
+                    "button",
+                    name=tab_name,
+                    exact=True
+                ).click(timeout=3000)
+
+                print(f"已切換分頁：{tab_name}")
+
+                return
+
+            except Exception:
+                pass
+
+            try:
+                await page.get_by_text(
+                    tab_name,
+                    exact=True
+                ).click(timeout=3000)
+
+                print(f"已切換分頁：{tab_name}")
+
+                return
+
+            except Exception:
+                pass
+
+        print("codes.yar.gg 找不到全部 / All 分頁，使用目前頁面")
+
+    @staticmethod
+    async def _extract_table_codes(page) -> list[str]:
+        codes: list[str] = []
+
+        raw_codes = await page.evaluate(
+            """
+            () => {
+                const results = [];
+
+                const elements = Array.from(
+                    document.querySelectorAll("input, button, div, span")
+                );
+
+                for (const el of elements) {
+                    const rect = el.getBoundingClientRect();
+
+                    if (rect.top < 430) {
+                        continue;
+                    }
+
+                    let text = "";
+
+                    if (el.tagName === "INPUT") {
+                        text = el.value || "";
+                    } else {
+                        text = el.innerText || el.textContent || "";
+                    }
+
+                    text = String(text || "").trim();
+
+                    if (!text) {
+                        continue;
+                    }
+
+                    results.push(text);
+                }
+
+                return results;
+            }
+            """
+        )
+
+        for item in raw_codes:
+            for line in str(item).splitlines():
+                code = CodesYar._clean_line(line)
+
+                if CodesYar._is_valid_code(code):
+                    codes.append(code)
+
+        return codes
+
+    @staticmethod
+    def _clean_codes(codes: list[str]) -> list[str]:
         result = []
 
-        matches = CodesYar.CODE_FIELD_PATTERN.findall(
-            code_entries_block
-        )
-
-        for _, raw_code in matches:
-            code = CodesYar._clean_code(raw_code)
-
-            if not CodesYar._is_valid_code(code):
-                continue
-
-            if code not in result:
-                result.append(code)
-
-        if result:
-            return result
-
-        fallback_matches = CodesYar.STRING_PATTERN.findall(
-            code_entries_block
-        )
-
-        for _, raw_code in fallback_matches:
-            code = CodesYar._clean_code(raw_code)
+        for code in codes:
+            code = CodesYar._clean_line(code)
 
             if not CodesYar._is_valid_code(code):
                 continue
@@ -192,22 +266,89 @@ class CodesYar:
         return result
 
     @staticmethod
-    def _clean_code(code: str) -> str:
-        code = str(code).strip().upper()
+    def _clean_line(line: str) -> str:
+        line = line.strip().upper()
 
-        code = code.strip("`'\"[](){}<>：:，,。.!！")
+        line = line.strip("`'\"[](){}<>：:，,。.!！")
 
-        code = code.replace(" ", "")
-        code = code.replace("-", "")
+        line = line.replace(" ", "")
+        line = line.replace("-", "")
 
-        return code
+        return line
 
     @staticmethod
     def _is_valid_code(code: str) -> bool:
         if not code:
             return False
 
+        if code in CodesYar.BLOCKLIST:
+            return False
+
         if not CodesYar.CODE_PATTERN.match(code):
             return False
 
+        if CodesYar._is_bad_code(code):
+            return False
+
         return True
+
+    @staticmethod
+    def _is_bad_code(code: str) -> bool:
+        if len(code) < 5 or len(code) > 20:
+            return True
+
+        if re.fullmatch(r"\d{2}T\d{2}", code):
+            return True
+
+        if re.fullmatch(r"\d+LEFT", code):
+            return True
+
+        if re.fullmatch(r"CODE\d+OF\d+", code):
+            return True
+
+        if re.fullmatch(r"\d+(LEFT|USED|EXPIRED|CODES|CODE)", code):
+            return True
+
+        bad_keywords = [
+            "TIPJAR",
+            "JAR",
+
+            "TRACK",
+            "CLICK",
+            "MARK",
+            "BELOW",
+            "PASTE",
+            "REPEAT",
+            "NEVER",
+            "ADDED",
+            "BUILD",
+            "TUTORIAL",
+            "BROWSER",
+            "SUBMISSION",
+
+            "SUBMIT",
+            "CONTACT",
+            "CANCEL",
+            "CONFIRM",
+            "REPORT",
+            "ARCHIVE",
+            "ACTIVE",
+            "UNUSED",
+            "USED",
+            "EXPIRED",
+            "COPY",
+            "COPIED",
+            "PREVIOUS",
+            "NEXT",
+            "LEFT",
+            "COUPON",
+            "REDEEM",
+            "CODE",
+            "CODES",
+        ]
+
+        for keyword in bad_keywords:
+            if keyword in code:
+                return True
+
+        return False
