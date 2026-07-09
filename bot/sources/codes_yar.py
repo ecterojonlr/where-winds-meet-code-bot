@@ -22,6 +22,9 @@ class CodesYar:
     )
 
     BLOCKLIST = {
+        # codes.yar.gg 新增誤判
+        "TIPJAR",
+
         # codes.yar.gg 介面文字
         "TRACK",
         "CLICK",
@@ -132,15 +135,10 @@ class CodesYar:
 
                 await page.wait_for_timeout(5000)
 
-                # 嘗試切換到 All 分頁
-                # 如果 All 本來就是預設頁，點不到也不影響
                 await CodesYar._click_all_tab(page)
 
                 await page.wait_for_timeout(2000)
 
-                # 只抓目前畫面上的文字
-                # 不抓 response
-                # 不抓 localStorage / sessionStorage
                 body_text = await CodesYar._safe_body_text(page)
 
             except Exception as error:
@@ -234,10 +232,8 @@ class CodesYar:
     def _clean_line(line: str) -> str:
         line = line.strip().upper()
 
-        # 移除常見包住序號的符號
         line = line.strip("`'\"[](){}<>：:，,。.!！")
 
-        # 移除空白與連字號
         line = line.replace(" ", "")
         line = line.replace("-", "")
 
@@ -252,7 +248,22 @@ class CodesYar:
         if re.fullmatch(r"\d{2}T\d{2}", code):
             return True
 
+        # 排除 codes.yar.gg 的數量提示，例如 79LEFT
+        if re.fullmatch(r"\d+LEFT", code):
+            return True
+
+        # 排除 codes.yar.gg 的頁面提示，例如 CODE1OF79
+        if re.fullmatch(r"CODE\d+OF\d+", code):
+            return True
+
+        # 排除純數字 + 常見 UI 詞
+        if re.fullmatch(r"\d+(LEFT|USED|EXPIRED|CODES|CODE)", code):
+            return True
+
         bad_keywords = [
+            "TIPJAR",
+            "JAR",
+
             "TRACK",
             "CLICK",
             "MARK",
@@ -280,11 +291,14 @@ class CodesYar:
             "COPIED",
             "PREVIOUS",
             "NEXT",
+            "LEFT",
             "WHERE",
             "WINDS",
             "MEET",
             "COUPON",
             "REDEEM",
+            "CODE",
+            "CODES",
         ]
 
         for keyword in bad_keywords:
