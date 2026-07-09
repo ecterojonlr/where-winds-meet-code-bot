@@ -18,82 +18,35 @@ class CodesYarPost:
 class CodesYar:
 
     CODE_PATTERN = re.compile(
-        r"\b[A-Z0-9]{5,20}\b"
+        r"^[A-Z0-9]{5,20}$"
     )
 
     BLOCKLIST = {
+        "",
+        "SEARCH",
         "TIPJAR",
-        "TRACK",
-        "CLICK",
-        "MARKED",
-        "BELOW",
-        "PASTE",
-        "REPEAT",
-        "NEVER",
-        "ADDED",
-        "BUILD",
-        "TUTORIAL",
-        "BROWSER",
-        "SUBMISSION",
-
-        "ENGLISH",
-        "ESPANOL",
-        "FRANCAIS",
-        "DEUTSCH",
-        "ITALIANO",
-        "PORTUGUES",
-        "RUSSIAN",
-        "TURKCE",
-        "ARABIC",
-        "CHINESE",
-        "JAPANESE",
-        "KOREAN",
-        "THAI",
-        "VIETNAMESE",
-        "INDONESIA",
-        "MALAYSIA",
-        "PIRATE",
-
-        "SUBMIT",
-        "CONTACT",
-        "CANCEL",
-        "CONFIRM",
-        "REPORT",
-        "ARCHIVED",
-        "ACTIVE",
-        "UNUSED",
-        "USED",
-        "EXPIRED",
-        "CODES",
-        "CODE",
-        "COUPON",
         "COPY",
         "COPIED",
-        "PREVIOUS",
-        "NEXT",
-        "BACK",
-        "SKIP",
-        "LEFT",
+        "USED",
+        "EXPIRED",
+        "UNUSED",
+        "ACTIVE",
+        "CODE",
+        "CODES",
+        "SUBMIT",
+        "CONTACT",
+        "REPORT",
         "FILTER",
-        "REFERENCE",
-        "DEVICE",
-        "VALID",
-        "INVALID",
-        "REDEEM",
-        "REDEEMED",
-        "RATE",
-        "LIMITED",
-
+        "ALL",
         "WHERE",
         "WINDS",
         "MEET",
         "WWM",
-        "YARGG",
     }
 
     @staticmethod
     async def fetch() -> list[CodesYarPost]:
-        body_text = ""
+        codes: list[str] = []
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -118,7 +71,7 @@ class CodesYar:
             )
 
             try:
-                print("開始抓取 codes.yar.gg 可用序號區塊")
+                print("開始抓取 codes.yar.gg 表格 input 序號")
                 print(CODES_YAR_URL)
 
                 await page.goto(
@@ -133,23 +86,11 @@ class CodesYar:
 
                 await page.wait_for_timeout(2000)
 
-                # 捲到頁面底部，讓所有表格內容都載入
-                previous_height = 0
+                # 捲到底，確保表格內容都有載入
+                await CodesYar._scroll_to_bottom(page)
 
-                for _ in range(20):
-                    current_height = await page.evaluate(
-                        "document.body.scrollHeight"
-                    )
-
-                    if current_height == previous_height:
-                        break
-
-                    previous_height = current_height
-
-                    await page.mouse.wheel(0, 2000)
-                    await page.wait_for_timeout(500)
-
-                body_text = await CodesYar._safe_body_text(page)
+                # 只抓 input.value
+                codes = await CodesYar._extract_input_codes(page)
 
             except Exception as error:
                 print("抓取 codes.yar.gg 失敗")
@@ -157,20 +98,18 @@ class CodesYar:
 
             await browser.close()
 
-        usable_section = CodesYar._extract_usable_section(body_text)
+        clean_codes = CodesYar._clean_codes(codes)
 
-        codes = CodesYar._extract_codes(usable_section)
+        print("codes.yar.gg 表格 input 抓到：", clean_codes)
 
-        print("codes.yar.gg 可用序號抓到：", codes)
-
-        if not codes:
+        if not clean_codes:
             return []
 
         return [
             CodesYarPost(
-                id="codes-yar-usable-section",
+                id="codes-yar-input-table",
                 url=CODES_YAR_URL,
-                text="\n".join(codes),
+                text="\n".join(clean_codes),
                 source="codes.yar.gg"
             )
         ]
@@ -191,7 +130,6 @@ class CodesYar:
                 ).click(timeout=3000)
 
                 print(f"已切換分頁：{tab_name}")
-
                 return
 
             except Exception:
@@ -204,7 +142,6 @@ class CodesYar:
                 ).click(timeout=3000)
 
                 print(f"已切換分頁：{tab_name}")
-
                 return
 
             except Exception:
@@ -213,86 +150,72 @@ class CodesYar:
         print("codes.yar.gg 找不到全部 / All 分頁，使用目前頁面")
 
     @staticmethod
-    async def _safe_body_text(page) -> str:
-        try:
-            return await page.locator("body").inner_text()
-        except Exception:
-            return ""
+    async def _scroll_to_bottom(page) -> None:
+        previous_height = 0
 
-    @staticmethod
-    def _extract_usable_section(text: str) -> str:
-        if not text:
-            return ""
+        for _ in range(20):
+            current_height = await page.evaluate(
+                "document.body.scrollHeight"
+            )
 
-        lines = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip()
-        ]
-
-        if not lines:
-            return ""
-
-        start_keywords = [
-            "可用兌換碼",
-            "可用兑换码",
-            "AVAILABLE CODES",
-            "USABLE CODES",
-            "ACTIVE CODES",
-        ]
-
-        stop_keywords = [
-            "過期兌換碼",
-            "过期兑换码",
-            "EXPIRED CODES",
-            "ARCHIVED CODES",
-            "CONFIRMED EXPIRED",
-        ]
-
-        start_index = -1
-        stop_index = len(lines)
-
-        for index, line in enumerate(lines):
-            upper_line = line.upper()
-
-            if any(keyword.upper() in upper_line for keyword in start_keywords):
-                start_index = index
+            if current_height == previous_height:
                 break
 
-        if start_index == -1:
-            print("找不到可用兌換碼區塊，改用整頁文字")
-            return "\n".join(lines)
+            previous_height = current_height
 
-        for index in range(start_index + 1, len(lines)):
-            upper_line = lines[index].upper()
+            await page.mouse.wheel(0, 2500)
+            await page.wait_for_timeout(500)
 
-            if any(keyword.upper() in upper_line for keyword in stop_keywords):
-                stop_index = index
-                break
-
-        section_lines = lines[start_index:stop_index]
-
-        return "\n".join(section_lines)
+        await page.wait_for_timeout(1000)
 
     @staticmethod
-    def _extract_codes(text: str) -> list[str]:
-        if not text:
-            return []
+    async def _extract_input_codes(page) -> list[str]:
+        raw_values = await page.evaluate(
+            """
+            () => {
+                const values = [];
 
-        candidates = CodesYar.CODE_PATTERN.findall(
-            text.upper()
+                const inputs = Array.from(
+                    document.querySelectorAll("input")
+                );
+
+                for (const input of inputs) {
+                    const value = String(input.value || "").trim();
+
+                    if (!value) {
+                        continue;
+                    }
+
+                    values.push(value);
+                }
+
+                return values;
+            }
+            """
         )
 
         result = []
 
-        for code in candidates:
-            code = CodesYar._clean_code(code)
+        for value in raw_values:
+            code = CodesYar._clean_code(value)
 
-            if not CodesYar._is_valid_code(code):
+            if CodesYar._is_valid_code(code):
+                result.append(code)
+
+        return result
+
+    @staticmethod
+    def _clean_codes(codes: list[str]) -> list[str]:
+        result = []
+
+        for code in codes:
+            clean_code = CodesYar._clean_code(code)
+
+            if not CodesYar._is_valid_code(clean_code):
                 continue
 
-            if code not in result:
-                result.append(code)
+            if clean_code not in result:
+                result.append(clean_code)
 
         return result
 
@@ -315,7 +238,7 @@ class CodesYar:
         if code in CodesYar.BLOCKLIST:
             return False
 
-        if not re.fullmatch(r"[A-Z0-9]{5,20}", code):
+        if not CodesYar.CODE_PATTERN.match(code):
             return False
 
         if CodesYar._is_bad_code(code):
@@ -328,9 +251,7 @@ class CodesYar:
         if len(code) < 5 or len(code) > 20:
             return True
 
-        if re.fullmatch(r"\d{2}T\d{2}", code):
-            return True
-
+        # 排除搜尋框、頁面提示、數量提示
         if re.fullmatch(r"\d+LEFT", code):
             return True
 
@@ -341,39 +262,18 @@ class CodesYar:
             return True
 
         bad_keywords = [
+            "SEARCH",
             "TIPJAR",
-            "JAR",
-
-            "TRACK",
-            "CLICK",
-            "MARK",
-            "BELOW",
-            "PASTE",
-            "REPEAT",
-            "NEVER",
-            "ADDED",
-            "BUILD",
-            "TUTORIAL",
-            "BROWSER",
-            "SUBMISSION",
-
+            "COPY",
+            "COPIED",
             "SUBMIT",
             "CONTACT",
-            "CANCEL",
-            "CONFIRM",
             "REPORT",
-            "ARCHIVE",
+            "FILTER",
             "ACTIVE",
             "UNUSED",
             "USED",
             "EXPIRED",
-            "COPY",
-            "COPIED",
-            "PREVIOUS",
-            "NEXT",
-            "LEFT",
-            "COUPON",
-            "REDEEM",
             "CODE",
             "CODES",
         ]
